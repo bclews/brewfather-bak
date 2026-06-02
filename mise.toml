@@ -1,0 +1,39 @@
+[tools]
+python = "3.13"
+uv = "latest"
+
+[settings]
+# Let uv manage the virtualenv; mise just provides the interpreter + uv.
+python.uv_venv_auto = false
+
+[env]
+# uv should use the mise-provided interpreter rather than downloading its own.
+UV_PYTHON_PREFERENCE = "only-system"
+
+[tasks.setup]
+description = "Create/sync the virtualenv from the lockfile"
+run = "uv sync"
+
+[tasks.run]
+description = "Run the backup CLI (pass args after --)"
+run = "uv run brewfather-backup"
+
+[tasks.test]
+description = "Run the test suite"
+run = "uv run pytest"
+
+[tasks.lint]
+description = "Lint with ruff"
+run = "uv run ruff check"
+
+[tasks.fmt]
+description = "Format with ruff"
+run = "uv run ruff format"
+
+[tasks.typecheck]
+description = "Type-check src with mypy"
+run = "uv run mypy src"
+
+[tasks.check]
+description = "Lint + type-check + test"
+depends = ["lint", "typecheck", "test"]
