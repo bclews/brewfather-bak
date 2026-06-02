@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
-import tempfile
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -81,13 +79,6 @@ class BackupSummary:
     counts: dict[str, int]
 
 
-def _default_dir_mode() -> int:
-    """The permission bits a plain ``mkdir`` would produce under the current umask."""
-    umask = os.umask(0)
-    os.umask(umask)
-    return 0o777 & ~umask
-
-
 def _write_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -141,13 +132,13 @@ def run_backup(
 
     owned_client = client is None
     client = client or BrewfatherClient(settings)
-    # Write into a sibling staging directory and atomically rename on success, so
-    # a mid-run failure never leaves a partial, manifest-less snapshot behind.
+    # Write directly into the final snapshot directory (rather than staging in a
+    # hidden temp dir and renaming) so macOS's iCloud File Provider enumerates the
+    # files as they are created and they appear in Finder. ``manifest.json`` is
+    # written last and acts as the "this snapshot is complete" marker; on failure
+    # the partial directory is removed so it is never mistaken for a good backup.
     settings.output_dir.mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(dir=settings.output_dir, prefix=f".{timestamp}.partial-"))
-    # mkdtemp is private (0700); publish the snapshot with normal directory perms
-    # so it behaves like any other folder (and syncs cleanly to iCloud Drive).
-    staging.chmod(_default_dir_mode())
+    snapshot.mkdir()  # FileExistsError on a same-second re-run; left to the caller
     counts: dict[str, int] = {}
     try:
         for label, path, dest in _selected_resources(selected):
@@ -160,7 +151,7 @@ def run_backup(
                 max_workers=settings.concurrency,
                 on_fetched=partial(reporter.record_fetched, label),
             )
-            _write_json(staging.joinpath(*dest), records)
+            _write_json(snapshot.joinpath(*dest), records)
             counts[label] = len(records)
             reporter.resource_finished(label, len(records))
 
@@ -171,10 +162,9 @@ def run_backup(
             "timestamp": timestamp,
             "counts": counts,
         }
-        _write_json(staging / "manifest.json", manifest)
-        staging.replace(snapshot)
+        _write_json(snapshot / "manifest.json", manifest)
     except BaseException:
-        shutil.rmtree(staging, ignore_errors=True)
+        shutil.rmtree(snapshot, ignore_errors=True)
         raise
     finally:
         if owned_client:

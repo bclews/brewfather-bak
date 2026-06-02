@@ -115,8 +115,8 @@ def test_run_backup_reports_progress(tmp_path: Path) -> None:
 
 @respx.mock
 def test_run_backup_snapshot_has_normal_permissions(tmp_path: Path) -> None:
-    # The atomic-write staging dir comes from mkdtemp (0700); the published
-    # snapshot should instead carry the usual umask-respecting directory mode.
+    # The snapshot is created with a plain mkdir, so it carries the usual
+    # umask-respecting directory mode (not the private 0700 of a temp dir).
     _mock_collection("recipes", "/recipes")
     summary = run_backup(_settings(tmp_path), only={"recipes"})
 
