@@ -1,2 +1,1 @@
-def main() -> None:
-    print("Hello from brewfather-backup!")
+"""Back up recipes, batches, and inventory from Brewfather."""
