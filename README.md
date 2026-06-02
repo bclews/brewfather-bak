@@ -1,5 +1,7 @@
 # brewfather-backup
 
+[![CI](https://github.com/bclews/brewfather-bak/actions/workflows/ci.yml/badge.svg)](https://github.com/bclews/brewfather-bak/actions/workflows/ci.yml)
+
 Back up your [Brewfather](https://brewfather.app) **recipes**, **batches**, and
 **inventory** (fermentables, hops, yeasts, miscs) to timestamped JSON snapshots
 on disk.

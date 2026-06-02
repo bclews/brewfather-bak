@@ -1,0 +1,37 @@
+name: Update lockfile
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch: # allow manual runs
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  uv-lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Provides uv (and Python 3.13) from mise.toml.
+      - uses: jdx/mise-action@v2
+
+      - name: Upgrade locked dependencies
+        run: uv lock --upgrade
+
+      # No-op when uv.lock is unchanged; otherwise opens/updates a single PR.
+      - name: Open PR if the lockfile changed
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "chore: update uv.lock"
+          title: "chore: weekly uv.lock update"
+          body: |
+            Automated `uv lock --upgrade`.
+
+            Review the lockfile diff. Note: CI does not run automatically on PRs
+            opened by the workflow token, so run `mise run check` locally (or
+            close and reopen this PR) before merging.
+          branch: chore/uv-lock-update
+          delete-branch: true
