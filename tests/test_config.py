@@ -9,7 +9,9 @@ def test_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BREWFATHER_USER_ID", "user123")
     monkeypatch.setenv("BREWFATHER_API_KEY", "secret456")
 
-    settings = Settings()
+    # _env_file=None so the assertions on defaults don't depend on the project's
+    # real .env (which sets, e.g., BREWFATHER_OUTPUT_DIR).
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
 
     assert settings.user_id == "user123"
     assert settings.api_key == "secret456"
@@ -49,7 +51,7 @@ def test_overrides_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BREWFATHER_REQUEST_TIMEOUT", "10")
     monkeypatch.setenv("BREWFATHER_CONCURRENCY", "4")
 
-    settings = Settings()
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
 
     assert str(settings.base_url) == "https://example.test/v2"
     assert settings.output_dir == Path("/tmp/bf")

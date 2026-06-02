@@ -114,6 +114,18 @@ def test_run_backup_reports_progress(tmp_path: Path) -> None:
 
 
 @respx.mock
+def test_run_backup_snapshot_has_normal_permissions(tmp_path: Path) -> None:
+    # The atomic-write staging dir comes from mkdtemp (0700); the published
+    # snapshot should instead carry the usual umask-respecting directory mode.
+    _mock_collection("recipes", "/recipes")
+    summary = run_backup(_settings(tmp_path), only={"recipes"})
+
+    reference = tmp_path / "reference"
+    reference.mkdir()
+    assert summary.path.stat().st_mode & 0o777 == reference.stat().st_mode & 0o777
+
+
+@respx.mock
 def test_run_backup_leaves_no_partial_snapshot_on_failure(tmp_path: Path) -> None:
     # List succeeds, but fetching the full record fails unrecoverably (401).
     respx.get(f"{BASE}/recipes").mock(return_value=httpx.Response(200, json=[{"_id": "id1"}]))

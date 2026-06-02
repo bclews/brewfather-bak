@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tempfile
 from collections.abc import Callable, Iterable
@@ -80,6 +81,13 @@ class BackupSummary:
     counts: dict[str, int]
 
 
+def _default_dir_mode() -> int:
+    """The permission bits a plain ``mkdir`` would produce under the current umask."""
+    umask = os.umask(0)
+    os.umask(umask)
+    return 0o777 & ~umask
+
+
 def _write_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -137,6 +145,9 @@ def run_backup(
     # a mid-run failure never leaves a partial, manifest-less snapshot behind.
     settings.output_dir.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(dir=settings.output_dir, prefix=f".{timestamp}.partial-"))
+    # mkdtemp is private (0700); publish the snapshot with normal directory perms
+    # so it behaves like any other folder (and syncs cleanly to iCloud Drive).
+    staging.chmod(_default_dir_mode())
     counts: dict[str, int] = {}
     try:
         for label, path, dest in _selected_resources(selected):
