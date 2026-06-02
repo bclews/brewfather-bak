@@ -3,8 +3,11 @@ name = "brewfather-backup"
 version = "0.1.0"
 description = "Back up recipes, batches, and inventory from Brewfather."
 authors = [
-    { name = "Bennett Clews", email = "ben.clews@csiro.au" }
+    { name = "Bennett Clews", email = "bennett.clews@gmail.com" }
 ]
+license = "MIT"
+license-files = ["LICENSE"]
+readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "httpx>=0.28.1",
@@ -15,6 +18,10 @@ dependencies = [
 
 [project.scripts]
 brewfather-backup = "brewfather_backup.cli:app"
+
+[project.urls]
+Repository = "https://github.com/bclews/brewfather-bak"
+Issues = "https://github.com/bclews/brewfather-bak/issues"
 
 [build-system]
 requires = ["uv_build>=0.11.2,<0.12.0"]
