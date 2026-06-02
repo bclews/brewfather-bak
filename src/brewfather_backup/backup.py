@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import tempfile
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -120,6 +122,10 @@ def run_backup(
 
     owned_client = client is None
     client = client or BrewfatherClient(settings)
+    # Write into a sibling staging directory and atomically rename on success, so
+    # a mid-run failure never leaves a partial, manifest-less snapshot behind.
+    settings.output_dir.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(dir=settings.output_dir, prefix=f".{timestamp}.partial-"))
     counts: dict[str, int] = {}
     try:
         for label, path, dest in _selected_resources(selected):
@@ -132,20 +138,24 @@ def run_backup(
                 max_workers=settings.concurrency,
                 on_fetched=partial(reporter.record_fetched, label),
             )
-            _write_json(snapshot.joinpath(*dest), records)
+            _write_json(staging.joinpath(*dest), records)
             counts[label] = len(records)
             reporter.resource_finished(label, len(records))
+
+        manifest = {
+            "tool": "brewfather-backup",
+            "version": _tool_version(),
+            "base_url": settings.base_url,
+            "timestamp": timestamp,
+            "counts": counts,
+        }
+        _write_json(staging / "manifest.json", manifest)
+        staging.replace(snapshot)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
     finally:
         if owned_client:
             client.close()
-
-    manifest = {
-        "tool": "brewfather-backup",
-        "version": _tool_version(),
-        "base_url": settings.base_url,
-        "timestamp": timestamp,
-        "counts": counts,
-    }
-    _write_json(snapshot / "manifest.json", manifest)
 
     return BackupSummary(path=snapshot, timestamp=timestamp, counts=counts)

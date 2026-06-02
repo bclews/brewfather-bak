@@ -3,9 +3,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
+import pytest
 import respx
 
 from brewfather_backup.backup import INVENTORY_TYPES, run_backup
+from brewfather_backup.client import BrewfatherError
 from brewfather_backup.config import Settings
 
 BASE = "https://api.brewfather.app/v2"
@@ -109,6 +111,21 @@ def test_run_backup_reports_progress(tmp_path: Path) -> None:
         ("record", "recipes"),
         ("finish", "recipes", 1),
     ]
+
+
+@respx.mock
+def test_run_backup_leaves_no_partial_snapshot_on_failure(tmp_path: Path) -> None:
+    # List succeeds, but fetching the full record fails unrecoverably (401).
+    respx.get(f"{BASE}/recipes").mock(return_value=httpx.Response(200, json=[{"_id": "id1"}]))
+    respx.get(f"{BASE}/recipes/id1").mock(return_value=httpx.Response(401, text="denied"))
+
+    now = datetime(2026, 6, 2, 14, 30, 0, tzinfo=UTC)
+    with pytest.raises(BrewfatherError):
+        run_backup(_settings(tmp_path), now=now, only={"recipes"})
+
+    assert not (tmp_path / "2026-06-02T14-30-00Z").exists()
+    # No staging leftovers either.
+    assert list(tmp_path.iterdir()) == []
 
 
 @respx.mock
