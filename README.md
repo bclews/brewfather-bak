@@ -50,7 +50,17 @@ mise run run
 mise run run -- --only inventory          # just inventory
 mise run run -- --only recipes --only batches
 mise run run -- --out /path/to/backups --verbose
+mise run run -- --workers 16              # more concurrent fetches
+mise run run -- --quiet                   # no progress spinner (good for cron)
 ```
+
+| Option            | Description                                              |
+| ----------------- | -------------------------------------------------------- |
+| `--out PATH`      | Output directory (overrides `BREWFATHER_OUTPUT_DIR`).    |
+| `--only GROUP`    | Limit to `recipes`, `batches`, or `inventory`. Repeatable. |
+| `--workers N`     | Concurrent record fetches (overrides `BREWFATHER_CONCURRENCY`, default 8). |
+| `--verbose`, `-v` | Print a per-resource summary table.                      |
+| `--quiet`, `-q`   | Suppress the live progress spinner.                      |
 
 Or invoke the installed script directly:
 
@@ -75,8 +85,8 @@ backups/
 
 Records are fetched in **full detail** (the API's `complete=true`), so the
 snapshot is a complete backup rather than just list summaries. The client paginates
-automatically and respects Brewfather's rate limit (500 calls/hour), backing off
-on `429` responses.
+automatically, fetches records **concurrently** (see `--workers`), and respects
+Brewfather's rate limit (500 calls/hour), backing off on `429` responses.
 
 ## Development
 

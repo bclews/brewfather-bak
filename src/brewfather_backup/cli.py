@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TaskID, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
-from .backup import GROUPS, BackupSummary, run_backup
+from .backup import GROUPS, BackupSummary, NullReporter, run_backup
 from .config import Settings
 
 app = typer.Typer(
@@ -35,26 +35,46 @@ def run(
         bool,
         typer.Option("--verbose", "-v", help="Print the snapshot path and per-resource counts."),
     ] = False,
+    quiet: Annotated[
+        bool,
+        typer.Option("--quiet", "-q", help="Suppress the live progress spinner."),
+    ] = False,
+    workers: Annotated[
+        int | None,
+        typer.Option("--workers", min=1, help="Concurrent record fetches (overrides config)."),
+    ] = None,
 ) -> None:
     """Run a backup."""
+    if quiet and verbose:
+        console.print("[red]--quiet and --verbose cannot be used together.[/red]")
+        raise typer.Exit(code=2)
+
     try:
         settings = Settings()
     except ValidationError as exc:
         console.print(f"[red]Configuration error:[/red] {exc}")
         raise typer.Exit(code=1) from exc
 
+    overrides: dict[str, object] = {}
     if out is not None:
-        settings = settings.model_copy(update={"output_dir": out})
+        overrides["output_dir"] = out
+    if workers is not None:
+        overrides["concurrency"] = workers
+    if overrides:
+        settings = settings.model_copy(update=overrides)
 
     selected = _validate_groups(only)
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        TimeElapsedColumn(),
-        console=console,
-        transient=False,
-    ) as progress:
-        summary = run_backup(settings, only=selected, reporter=_RichReporter(progress))
+    if quiet:
+        summary = run_backup(settings, only=selected, reporter=NullReporter())
+    else:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            TimeElapsedColumn(),
+            console=console,
+            transient=False,
+        ) as progress:
+            summary = run_backup(settings, only=selected, reporter=_RichReporter(progress))
     _print_summary(summary, verbose=verbose)
 
 
