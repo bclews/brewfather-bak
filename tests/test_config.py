@@ -17,6 +17,7 @@ def test_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.base_url == "https://api.brewfather.app/v2"
     assert settings.output_dir == Path("backups")
     assert settings.request_timeout == 30.0
+    assert settings.concurrency == 8
 
 
 def test_missing_credentials_raise_clear_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -37,9 +38,11 @@ def test_overrides_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BREWFATHER_BASE_URL", "https://example.test/v2")
     monkeypatch.setenv("BREWFATHER_OUTPUT_DIR", "/tmp/bf")
     monkeypatch.setenv("BREWFATHER_REQUEST_TIMEOUT", "10")
+    monkeypatch.setenv("BREWFATHER_CONCURRENCY", "4")
 
     settings = Settings()
 
     assert settings.base_url == "https://example.test/v2"
     assert settings.output_dir == Path("/tmp/bf")
     assert settings.request_timeout == 10.0
+    assert settings.concurrency == 4

@@ -72,6 +72,31 @@ class _RecordingReporter:
         self.events.append(("finish", label, count))
 
 
+def _mock_list(path: str, ids: list[str]) -> None:
+    respx.get(f"{BASE}{path}").mock(
+        return_value=httpx.Response(200, json=[{"_id": i} for i in ids])
+    )
+    for i in ids:
+        respx.get(f"{BASE}{path}/{i}").mock(
+            return_value=httpx.Response(200, json={"_id": i, "complete": True})
+        )
+
+
+@respx.mock
+def test_run_backup_fetches_records_in_order(tmp_path: Path) -> None:
+    ids = [f"id{n}" for n in range(12)]
+    _mock_list("/recipes", ids)
+
+    settings = _settings(tmp_path)  # default concurrency > 1
+    reporter = _RecordingReporter()
+    summary = run_backup(settings, only={"recipes"}, reporter=reporter)
+
+    recipes = json.loads((summary.path / "recipes.json").read_text())
+    assert [r["_id"] for r in recipes] == ids  # order preserved despite concurrency
+    assert summary.counts["recipes"] == 12
+    assert sum(1 for e in reporter.events if e[0] == "record") == 12
+
+
 @respx.mock
 def test_run_backup_reports_progress(tmp_path: Path) -> None:
     _mock_collection("recipes", "/recipes")

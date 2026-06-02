@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import partial
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, Protocol
@@ -70,6 +72,33 @@ def _write_json(path: Path, data: Any) -> None:
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def _fetch_full(
+    client: BrewfatherClient,
+    path: str,
+    ids: list[str],
+    *,
+    max_workers: int,
+    on_fetched: Callable[[], None],
+) -> list[dict[str, Any]]:
+    """Fetch each record by id concurrently, returning results in ``ids`` order.
+
+    ``on_fetched`` is invoked once per completed record from the calling thread
+    (not the worker threads), so reporters need not be thread-safe.
+    """
+    results: list[dict[str, Any] | None] = [None] * len(ids)
+    if not ids:
+        return []
+    workers = min(max_workers, len(ids))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        future_to_index = {
+            pool.submit(client.get, path, record_id): i for i, record_id in enumerate(ids)
+        }
+        for future in as_completed(future_to_index):
+            results[future_to_index[future]] = future.result()
+            on_fetched()
+    return [record for record in results if record is not None]
+
+
 def run_backup(
     settings: Settings,
     *,
@@ -95,10 +124,14 @@ def run_backup(
     try:
         for label, path, dest in _selected_resources(selected):
             reporter.resource_started(label)
-            records = []
-            for record in client.iter_full(path):
-                records.append(record)
-                reporter.record_fetched(label)
+            ids = [summary["_id"] for summary in client.paginate(path)]
+            records = _fetch_full(
+                client,
+                path,
+                ids,
+                max_workers=settings.concurrency,
+                on_fetched=partial(reporter.record_fetched, label),
+            )
             _write_json(snapshot.joinpath(*dest), records)
             counts[label] = len(records)
             reporter.resource_finished(label, len(records))

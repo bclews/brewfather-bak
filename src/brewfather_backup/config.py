@@ -29,3 +29,4 @@ class Settings(BaseSettings):
     base_url: str = "https://api.brewfather.app/v2"
     output_dir: Path = Path("backups")
     request_timeout: float = 30.0
+    concurrency: int = Field(default=8, ge=1, description="Max concurrent record fetches.")
