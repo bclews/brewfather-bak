@@ -11,10 +11,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from functools import partial
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, Protocol
 
+from . import __version__
 from .client import BrewfatherClient
 from .config import Settings
 
@@ -33,19 +33,28 @@ GROUPS: tuple[str, ...] = tuple(group.value for group in Group)
 
 
 class ProgressReporter(Protocol):
-    """Receives progress events during a backup so callers can render feedback."""
+    """Receives progress events during a backup so callers can render feedback.
 
-    def resource_started(self, label: str) -> None: ...
-    def record_fetched(self, label: str) -> None: ...
-    def resource_finished(self, label: str, count: int) -> None: ...
+    The methods carry no-op default bodies so subclasses (e.g. :class:`NullReporter`)
+    only override what they care about.
+    """
+
+    def resource_started(self, label: str) -> None:
+        return None
+
+    def record_fetched(self, label: str) -> None:
+        return None
+
+    def resource_finished(self, label: str, count: int) -> None:
+        return None
 
 
-class NullReporter:
-    """A reporter that does nothing (the default)."""
+class NullReporter(ProgressReporter):
+    """A reporter that does nothing (the default).
 
-    def resource_started(self, label: str) -> None: ...
-    def record_fetched(self, label: str) -> None: ...
-    def resource_finished(self, label: str, count: int) -> None: ...
+    Inherits the protocol's no-op method bodies, so there is a single place to
+    update if the reporter interface grows.
+    """
 
 
 def _selected_resources(selected: set[str]) -> list[tuple[str, str, tuple[str, ...]]]:
@@ -69,13 +78,6 @@ class BackupSummary:
     path: Path
     timestamp: str
     counts: dict[str, int]
-
-
-def _tool_version() -> str:
-    try:
-        return version("brewfather-backup")
-    except PackageNotFoundError:  # pragma: no cover - only when running from source tree
-        return "0.0.0+unknown"
 
 
 def _write_json(path: Path, data: Any) -> None:
@@ -153,7 +155,7 @@ def run_backup(
 
         manifest = {
             "tool": "brewfather-backup",
-            "version": _tool_version(),
+            "version": __version__,
             "base_url": settings.base_url,
             "timestamp": timestamp,
             "counts": counts,

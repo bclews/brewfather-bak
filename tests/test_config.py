@@ -32,6 +32,15 @@ def test_missing_credentials_raise_clear_error(monkeypatch: pytest.MonkeyPatch) 
     assert "api_key" in message
 
 
+def test_invalid_base_url_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BREWFATHER_USER_ID", "u")
+    monkeypatch.setenv("BREWFATHER_API_KEY", "k")
+    monkeypatch.setenv("BREWFATHER_BASE_URL", "ftp://nope")
+
+    with pytest.raises(ValueError, match="base_url"):
+        Settings()
+
+
 def test_overrides_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BREWFATHER_USER_ID", "u")
     monkeypatch.setenv("BREWFATHER_API_KEY", "k")

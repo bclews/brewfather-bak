@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,3 +30,15 @@ class Settings(BaseSettings):
     output_dir: Path = Path("backups")
     request_timeout: float = 30.0
     concurrency: int = Field(default=8, ge=1, description="Max concurrent record fetches.")
+
+    @field_validator("base_url")
+    @classmethod
+    def _validate_base_url(cls, value: str) -> str:
+        """Reject obviously malformed URLs at load time rather than at request time.
+
+        Kept as a plain ``str`` (not ``HttpUrl``) so the value passes through to
+        ``httpx`` unchanged; we only check the scheme.
+        """
+        if not value.startswith(("http://", "https://")):
+            raise ValueError("base_url must start with http:// or https://")
+        return value
