@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from .client import BrewfatherClient
 from .config import Settings
@@ -17,6 +17,36 @@ INVENTORY_TYPES: tuple[str, ...] = ("fermentables", "hops", "yeasts", "miscs")
 
 # Top-level resource groups that ``--only`` can select.
 GROUPS: tuple[str, ...] = ("recipes", "batches", "inventory")
+
+
+class ProgressReporter(Protocol):
+    """Receives progress events during a backup so callers can render feedback."""
+
+    def resource_started(self, label: str) -> None: ...
+    def record_fetched(self, label: str) -> None: ...
+    def resource_finished(self, label: str, count: int) -> None: ...
+
+
+class NullReporter:
+    """A reporter that does nothing (the default)."""
+
+    def resource_started(self, label: str) -> None: ...
+    def record_fetched(self, label: str) -> None: ...
+    def resource_finished(self, label: str, count: int) -> None: ...
+
+
+def _selected_resources(selected: set[str]) -> list[tuple[str, str, tuple[str, ...]]]:
+    """Return ``(label, api_path, snapshot_path_parts)`` for the chosen groups."""
+    resources: list[tuple[str, str, tuple[str, ...]]] = []
+    if "recipes" in selected:
+        resources.append(("recipes", "/recipes", ("recipes.json",)))
+    if "batches" in selected:
+        resources.append(("batches", "/batches", ("batches.json",)))
+    if "inventory" in selected:
+        for inv in INVENTORY_TYPES:
+            dest = ("inventory", f"{inv}.json")
+            resources.append((f"inventory.{inv}", f"/inventory/{inv}", dest))
+    return resources
 
 
 @dataclass(frozen=True)
@@ -46,13 +76,16 @@ def run_backup(
     client: BrewfatherClient | None = None,
     only: Iterable[str] | None = None,
     now: datetime | None = None,
+    reporter: ProgressReporter | None = None,
 ) -> BackupSummary:
     """Fetch the selected resources in full and write a snapshot to disk.
 
     ``only`` restricts the run to a subset of :data:`GROUPS`; by default every
-    group is backed up.
+    group is backed up. ``reporter`` receives per-resource and per-record events
+    so callers can show live progress.
     """
     selected = set(only) if only is not None else set(GROUPS)
+    reporter = reporter or NullReporter()
     timestamp = (now or datetime.now(UTC)).strftime("%Y-%m-%dT%H-%M-%SZ")
     snapshot = settings.output_dir / timestamp
 
@@ -60,21 +93,15 @@ def run_backup(
     client = client or BrewfatherClient(settings)
     counts: dict[str, int] = {}
     try:
-        if "recipes" in selected:
-            records = list(client.iter_full("/recipes"))
-            _write_json(snapshot / "recipes.json", records)
-            counts["recipes"] = len(records)
-
-        if "batches" in selected:
-            records = list(client.iter_full("/batches"))
-            _write_json(snapshot / "batches.json", records)
-            counts["batches"] = len(records)
-
-        if "inventory" in selected:
-            for inv in INVENTORY_TYPES:
-                records = list(client.iter_full(f"/inventory/{inv}"))
-                _write_json(snapshot / "inventory" / f"{inv}.json", records)
-                counts[f"inventory.{inv}"] = len(records)
+        for label, path, dest in _selected_resources(selected):
+            reporter.resource_started(label)
+            records = []
+            for record in client.iter_full(path):
+                records.append(record)
+                reporter.record_fetched(label)
+            _write_json(snapshot.joinpath(*dest), records)
+            counts[label] = len(records)
+            reporter.resource_finished(label, len(records))
     finally:
         if owned_client:
             client.close()

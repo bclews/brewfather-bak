@@ -8,6 +8,7 @@ from typing import Annotated
 import typer
 from pydantic import ValidationError
 from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TaskID, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
 from .backup import GROUPS, BackupSummary, run_backup
@@ -46,8 +47,46 @@ def run(
         settings = settings.model_copy(update={"output_dir": out})
 
     selected = _validate_groups(only)
-    summary = run_backup(settings, only=selected)
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        TimeElapsedColumn(),
+        console=console,
+        transient=False,
+    ) as progress:
+        summary = run_backup(settings, only=selected, reporter=_RichReporter(progress))
     _print_summary(summary, verbose=verbose)
+
+
+class _RichReporter:
+    """Renders backup progress as a live spinner + running count per resource."""
+
+    def __init__(self, progress: Progress) -> None:
+        self._progress = progress
+        self._tasks: dict[str, TaskID] = {}
+        self._counts: dict[str, int] = {}
+
+    def resource_started(self, label: str) -> None:
+        self._counts[label] = 0
+        self._tasks[label] = self._progress.add_task(f"Fetching {label}…", total=None)
+
+    def record_fetched(self, label: str) -> None:
+        self._counts[label] += 1
+        self._progress.update(
+            self._tasks[label],
+            description=f"Fetching {label}… ({self._counts[label]})",
+            advance=1,
+        )
+
+    def resource_finished(self, label: str, count: int) -> None:
+        task = self._tasks[label]
+        self._progress.update(
+            task,
+            description=f"[green]✓[/green] {label} ({count})",
+            total=count,
+            completed=count,
+        )
+        self._progress.stop_task(task)
 
 
 def _validate_groups(only: list[str] | None) -> set[str] | None:

@@ -10,6 +10,7 @@ runner = CliRunner()
 
 
 def test_cli_invokes_run_backup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)  # isolate from any real .env in the project root
     monkeypatch.setenv("BREWFATHER_USER_ID", "u")
     monkeypatch.setenv("BREWFATHER_API_KEY", "k")
 
@@ -31,7 +32,8 @@ def test_cli_invokes_run_backup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     assert "recipes" in result.stdout  # verbose table lists the resource
 
 
-def test_cli_reports_config_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cli_reports_config_error(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)  # no .env here, so missing creds surface
     monkeypatch.delenv("BREWFATHER_USER_ID", raising=False)
     monkeypatch.delenv("BREWFATHER_API_KEY", raising=False)
 

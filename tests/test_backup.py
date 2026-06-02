@@ -58,6 +58,34 @@ def test_run_backup_writes_snapshot(tmp_path: Path) -> None:
     assert "version" in manifest
 
 
+class _RecordingReporter:
+    def __init__(self) -> None:
+        self.events: list[tuple] = []
+
+    def resource_started(self, label: str) -> None:
+        self.events.append(("start", label))
+
+    def record_fetched(self, label: str) -> None:
+        self.events.append(("record", label))
+
+    def resource_finished(self, label: str, count: int) -> None:
+        self.events.append(("finish", label, count))
+
+
+@respx.mock
+def test_run_backup_reports_progress(tmp_path: Path) -> None:
+    _mock_collection("recipes", "/recipes")
+    reporter = _RecordingReporter()
+
+    run_backup(_settings(tmp_path), only={"recipes"}, reporter=reporter)
+
+    assert reporter.events == [
+        ("start", "recipes"),
+        ("record", "recipes"),
+        ("finish", "recipes", 1),
+    ]
+
+
 @respx.mock
 def test_run_backup_only_subset(tmp_path: Path) -> None:
     _mock_collection("recipes", "/recipes")
