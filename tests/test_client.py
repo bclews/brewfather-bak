@@ -1,10 +1,12 @@
 import base64
+from datetime import UTC, datetime, timedelta
+from email.utils import format_datetime
 
 import httpx
 import pytest
 import respx
 
-from brewfather_backup.client import BrewfatherClient, BrewfatherError
+from brewfather_backup.client import BrewfatherClient, BrewfatherError, _retry_after_seconds
 from brewfather_backup.config import Settings
 
 BASE = "https://api.brewfather.app/v2"
@@ -106,6 +108,73 @@ def test_retries_on_429_honoring_retry_after(settings: Settings) -> None:
 
 
 @respx.mock
+def test_retries_on_5xx_with_backoff(settings: Settings) -> None:
+    responses = [
+        httpx.Response(503),
+        httpx.Response(502),
+        httpx.Response(200, json=[]),
+    ]
+    route = respx.get(f"{BASE}/recipes").mock(side_effect=responses)
+
+    slept: list[float] = []
+    with BrewfatherClient(
+        settings, sleep=slept.append, backoff_factor=0.5, jitter=lambda: 0.0
+    ) as client:
+        list(client.paginate("/recipes"))
+
+    assert route.call_count == 3
+    assert slept == [0.5, 1.0]  # exponential: 0.5*2**0, 0.5*2**1
+
+
+@respx.mock
+def test_retries_on_transport_error(settings: Settings) -> None:
+    responses = [httpx.ConnectError("boom"), httpx.Response(200, json=[])]
+    route = respx.get(f"{BASE}/recipes").mock(side_effect=responses)
+
+    slept: list[float] = []
+    with BrewfatherClient(
+        settings, sleep=slept.append, backoff_factor=0.5, jitter=lambda: 0.0
+    ) as client:
+        list(client.paginate("/recipes"))
+
+    assert route.call_count == 2
+    assert slept == [0.5]
+
+
+@respx.mock
+def test_gives_up_after_max_retries_on_5xx(settings: Settings) -> None:
+    route = respx.get(f"{BASE}/recipes").mock(return_value=httpx.Response(503))
+
+    slept: list[float] = []
+    with (
+        BrewfatherClient(
+            settings, sleep=slept.append, max_retries=2, jitter=lambda: 0.0
+        ) as client,
+        pytest.raises(BrewfatherError) as exc_info,
+    ):
+        list(client.paginate("/recipes"))
+
+    assert route.call_count == 3  # initial + 2 retries
+    assert "503" in str(exc_info.value)
+
+
+@respx.mock
+def test_gives_up_after_max_retries_on_transport_error(settings: Settings) -> None:
+    route = respx.get(f"{BASE}/recipes").mock(side_effect=httpx.ConnectError("boom"))
+
+    with (
+        BrewfatherClient(
+            settings, sleep=lambda _: None, max_retries=2, jitter=lambda: 0.0
+        ) as client,
+        pytest.raises(BrewfatherError) as exc_info,
+    ):
+        list(client.paginate("/recipes"))
+
+    assert route.call_count == 3
+    assert "boom" in str(exc_info.value)
+
+
+@respx.mock
 def test_raises_on_other_http_errors(settings: Settings) -> None:
     respx.get(f"{BASE}/recipes").mock(return_value=httpx.Response(401, text="nope"))
 
@@ -113,3 +182,33 @@ def test_raises_on_other_http_errors(settings: Settings) -> None:
         list(client.paginate("/recipes"))
 
     assert "401" in str(exc_info.value)
+
+
+@respx.mock
+def test_error_message_truncates_long_body(settings: Settings) -> None:
+    respx.get(f"{BASE}/recipes").mock(return_value=httpx.Response(400, text="x" * 5000))
+
+    with BrewfatherClient(settings) as client, pytest.raises(BrewfatherError) as exc_info:
+        list(client.paginate("/recipes"))
+
+    message = str(exc_info.value)
+    assert len(message) < 1000
+    assert "…" in message
+
+
+def test_retry_after_seconds_parses_integer() -> None:
+    response = httpx.Response(429, headers={"Retry-After": "7"})
+    assert _retry_after_seconds(response) == 7.0
+
+
+def test_retry_after_seconds_parses_http_date() -> None:
+    now = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
+    response = httpx.Response(
+        429, headers={"Retry-After": format_datetime(now + timedelta(seconds=30))}
+    )
+    assert _retry_after_seconds(response, now=now) == pytest.approx(30.0, abs=1.0)
+
+
+def test_retry_after_seconds_falls_back_on_garbage() -> None:
+    response = httpx.Response(429, headers={"Retry-After": "soon"})
+    assert _retry_after_seconds(response, default=1.5) == 1.5
