@@ -14,7 +14,7 @@ def test_settings_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.user_id == "user123"
     assert settings.api_key == "secret456"
     # Defaults
-    assert settings.base_url == "https://api.brewfather.app/v2"
+    assert str(settings.base_url) == "https://api.brewfather.app/v2"
     assert settings.output_dir == Path("backups")
     assert settings.request_timeout == 30.0
     assert settings.concurrency == 8
@@ -51,7 +51,7 @@ def test_overrides_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
     settings = Settings()
 
-    assert settings.base_url == "https://example.test/v2"
+    assert str(settings.base_url) == "https://example.test/v2"
     assert settings.output_dir == Path("/tmp/bf")
     assert settings.request_timeout == 10.0
     assert settings.concurrency == 4

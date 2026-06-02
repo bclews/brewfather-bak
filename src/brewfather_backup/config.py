@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import Field, HttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,19 +26,7 @@ class Settings(BaseSettings):
     user_id: str = Field(..., description="Brewfather user id (Settings -> API).")
     api_key: str = Field(..., description="Brewfather API key (Settings -> API).")
 
-    base_url: str = "https://api.brewfather.app/v2"
+    base_url: HttpUrl = HttpUrl("https://api.brewfather.app/v2")
     output_dir: Path = Path("backups")
     request_timeout: float = 30.0
     concurrency: int = Field(default=8, ge=1, description="Max concurrent record fetches.")
-
-    @field_validator("base_url")
-    @classmethod
-    def _validate_base_url(cls, value: str) -> str:
-        """Reject obviously malformed URLs at load time rather than at request time.
-
-        Kept as a plain ``str`` (not ``HttpUrl``) so the value passes through to
-        ``httpx`` unchanged; we only check the scheme.
-        """
-        if not value.startswith(("http://", "https://")):
-            raise ValueError("base_url must start with http:// or https://")
-        return value

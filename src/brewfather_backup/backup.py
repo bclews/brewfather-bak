@@ -156,7 +156,7 @@ def run_backup(
         manifest = {
             "tool": "brewfather-backup",
             "version": __version__,
-            "base_url": settings.base_url,
+            "base_url": str(settings.base_url),
             "timestamp": timestamp,
             "counts": counts,
         }

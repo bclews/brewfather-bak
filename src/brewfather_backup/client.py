@@ -58,7 +58,7 @@ class BrewfatherClient:
         self._backoff_factor = backoff_factor
         self._jitter = jitter
         self._client = client or httpx.Client(
-            base_url=settings.base_url,
+            base_url=str(settings.base_url),
             auth=(settings.user_id, settings.api_key),
             timeout=settings.request_timeout,
         )
