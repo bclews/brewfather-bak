@@ -9,6 +9,7 @@ from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import StrEnum
 from functools import partial
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -19,8 +20,16 @@ from .config import Settings
 
 INVENTORY_TYPES: tuple[str, ...] = ("fermentables", "hops", "yeasts", "miscs")
 
-# Top-level resource groups that ``--only`` can select.
-GROUPS: tuple[str, ...] = ("recipes", "batches", "inventory")
+
+class Group(StrEnum):
+    """Top-level resource groups that ``--only`` can select."""
+
+    recipes = "recipes"
+    batches = "batches"
+    inventory = "inventory"
+
+
+GROUPS: tuple[str, ...] = tuple(group.value for group in Group)
 
 
 class ProgressReporter(Protocol):

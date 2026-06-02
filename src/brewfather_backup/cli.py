@@ -5,13 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated
 
+import httpx
 import typer
 from pydantic import ValidationError
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TaskID, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
-from .backup import GROUPS, BackupSummary, NullReporter, run_backup
+from .backup import BackupSummary, Group, NullReporter, run_backup
+from .client import BrewfatherError
 from .config import Settings
 
 app = typer.Typer(
@@ -28,8 +30,8 @@ def run(
         typer.Option("--out", help="Output directory (overrides BREWFATHER_OUTPUT_DIR)."),
     ] = None,
     only: Annotated[
-        list[str] | None,
-        typer.Option("--only", help=f"Limit to groups: {', '.join(GROUPS)}. Repeatable."),
+        list[Group] | None,
+        typer.Option("--only", help="Limit to one or more resource groups. Repeatable."),
     ] = None,
     verbose: Annotated[
         bool,
@@ -61,20 +63,26 @@ def run(
     if workers is not None:
         overrides["concurrency"] = workers
     if overrides:
-        settings = settings.model_copy(update=overrides)
+        # Re-validate rather than model_copy(update=...) so field constraints
+        # (e.g. concurrency >= 1) still apply to the overridden values.
+        settings = Settings.model_validate({**settings.model_dump(), **overrides})
 
-    selected = _validate_groups(only)
-    if quiet:
-        summary = run_backup(settings, only=selected, reporter=NullReporter())
-    else:
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            TimeElapsedColumn(),
-            console=console,
-            transient=False,
-        ) as progress:
-            summary = run_backup(settings, only=selected, reporter=_RichReporter(progress))
+    selected = {group.value for group in only} if only else None
+    try:
+        if quiet:
+            summary = run_backup(settings, only=selected, reporter=NullReporter())
+        else:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                TimeElapsedColumn(),
+                console=console,
+                transient=False,
+            ) as progress:
+                summary = run_backup(settings, only=selected, reporter=_RichReporter(progress))
+    except (BrewfatherError, httpx.HTTPError) as exc:
+        console.print(f"[red]Backup failed:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
     _print_summary(summary, verbose=verbose)
 
 
@@ -107,19 +115,6 @@ class _RichReporter:
             completed=count,
         )
         self._progress.stop_task(task)
-
-
-def _validate_groups(only: list[str] | None) -> set[str] | None:
-    if not only:
-        return None
-    unknown = sorted(set(only) - set(GROUPS))
-    if unknown:
-        console.print(
-            f"[red]Unknown group(s):[/red] {', '.join(unknown)}. "
-            f"Choose from: {', '.join(GROUPS)}."
-        )
-        raise typer.Exit(code=2)
-    return set(only)
 
 
 def _print_summary(summary: BackupSummary, *, verbose: bool) -> None:

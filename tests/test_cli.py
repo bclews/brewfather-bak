@@ -5,6 +5,7 @@ from typer.testing import CliRunner
 
 from brewfather_backup import cli
 from brewfather_backup.backup import BackupSummary, NullReporter
+from brewfather_backup.client import BrewfatherError
 
 runner = CliRunner()
 
@@ -73,6 +74,37 @@ def test_cli_quiet_and_verbose_conflict(monkeypatch: pytest.MonkeyPatch, tmp_pat
     monkeypatch.setattr(cli, "run_backup", lambda *a, **k: None)
 
     result = runner.invoke(cli.app, ["--quiet", "--verbose"])
+
+    assert result.exit_code != 0
+
+
+def test_cli_reports_backup_failure_gracefully(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("BREWFATHER_USER_ID", "u")
+    monkeypatch.setenv("BREWFATHER_API_KEY", "k")
+
+    def boom(*_args: object, **_kwargs: object) -> object:
+        raise BrewfatherError("GET /recipes failed with 503")
+
+    monkeypatch.setattr(cli, "run_backup", boom)
+
+    result = runner.invoke(cli.app, ["--quiet"])
+
+    assert result.exit_code == 1
+    assert "Backup failed" in result.output
+    assert "503" in result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+
+
+def test_cli_rejects_unknown_group(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("BREWFATHER_USER_ID", "u")
+    monkeypatch.setenv("BREWFATHER_API_KEY", "k")
+    monkeypatch.setattr(cli, "run_backup", lambda *a, **k: None)
+
+    result = runner.invoke(cli.app, ["--only", "bogus"])
 
     assert result.exit_code != 0
 
