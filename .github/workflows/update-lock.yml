@@ -13,7 +13,7 @@ jobs:
   uv-lock:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Provides uv (and Python 3.13) from mise.toml.
       - uses: jdx/mise-action@v4
